@@ -1,0 +1,219 @@
+<html><head><title>OSC viewer</title>
+<script src="osc-browser.js"></script>
+<style>
+html, body {
+	font-family: Calibri;
+	font-size: 12px;
+}
+.oscrow {
+    animation-name: updatedRow;
+    animation-duration: 2000ms;
+    animation-timing-function: ease-in-out;
+}
+.address {
+	width: 300px;
+	max-width: 300px;
+	overflow: hidden;
+	display: inline-block;
+	border-bottom: 1px dotted #ccc;
+}
+.value {
+    animation-name: updated;
+    animation-duration: 125ms;
+    animation-timing-function: ease-in-out;
+}
+#viewer {
+	column-count: 2;
+	column-rule-style: solid;
+}
+#controls {
+	border-bottom: 2px solid #000;
+	font-size: 16px;
+}
+@keyframes updatedRow {
+    0%      { background-color:rgba(250,250,210,1); }
+    50.0%   { background-color:rgba(250,250,210,0.5); }
+    100.0%  { background-color:rgba(250,250,210,0); }
+}
+@keyframes updated {
+    0%      { background-color:rgba(250,250,210,1); }
+    50.0%   { background-color:rgba(250,250,210,0.5); }
+    100.0%  { background-color:rgba(250,250,210,0); }
+}
+</style>
+</head>
+<body>
+
+<div id="controls>">Filter: 
+	<input type="checkbox" id="diag" name="diag" class="filterToggle"><label for="diag">Diag</label>
+	<input type="checkbox" id="audio" name="audio" class="filterToggle"><label for="audio">Audio</label>
+	<input type="checkbox" id="output" name="output" class="filterToggle"><label for="output">Output</label>
+	<input type="checkbox" id="profiler" name="profiler" class="filterToggle"><label for="profiler">Profiler</label>
+	<input type="checkbox" id="timecode" name="timecode" class="filterToggle"><label for="timecode">Timecode</label>
+	<input type="checkbox" id="format" name="format" class="filterToggle"><label for="format">Format</label>
+	<input type="checkbox" id="channel" name="channel" class="filterToggle"><label for="channel">Channel</label>
+	<button id="pauseOsc" onclick="togglePause();">Pause OSC parsing</button>
+	<button id="orderOsc" onclick="resetViewer()">CLEAR LOG</button>
+	<button id="orderOsc" onclick="resetCounters()">RESET COUNTERS</button>
+	<button id="orderOsc" onclick="orderDivs()">Reorder by address</button>
+	<label for="livefilter">Filter: </label><input type="text" oninput="liveFilter(this.value);"> (The filter only works on new input and will delete old data if it matches)
+</div>
+
+<br>
+
+<div id="viewer"></div>
+
+<script>
+var viewer = document.getElementById('viewer');
+var paused = false;
+var filter = [];
+var counter = [];
+var freeFilter = '';
+
+var filterCheckboxes = document.querySelectorAll('.filterToggle');
+var filterCheckboxesLength = filterCheckboxes.length;
+for(i=0; i < filterCheckboxesLength; i++) {
+	var filterCheckbox = filterCheckboxes[i];
+    filterCheckbox.addEventListener('change', function(event) {
+    	var filterName = this.name;
+    	if(!this.checked) {
+	        filter[filterName] = false;
+    	} else {
+        	filter[filterName] = true;
+        	removeDiv(filterName);
+
+    	}
+    });
+};
+
+function liveFilter(v) {
+	freeFilter = v.replace('/','').replace(' ','');;
+	if(freeFilter.length > 2) {
+		removeDiv(freeFilter);
+	}
+}
+
+function removeDiv(filterName) {
+	var remove = viewer.querySelectorAll('[id*='+filterName+']');
+	var removelength = remove.length;
+	for(i=0; i < removelength; i++) {
+		remove[i].parentNode.removeChild(remove[i]);
+	}	
+}
+
+function resetViewer() {
+	paused = true;
+	setTimeout(function() {
+		viewer.innerHTML = '';
+		paused = false;
+	},50);
+}
+
+function resetCounters() {
+	paused = true;
+	for (x in counter) {
+	    if (counter.hasOwnProperty(x)) {
+	        counter[x] = 0;
+	    }
+	}
+    paused = false;
+}
+
+function togglePause() {
+	paused = !paused;
+}
+
+function fixSlash(t) {
+	return t.replace(/\//g, '_');
+}
+
+function orderDivs() {
+	paused=true;
+	setTimeout(function() {
+		var divs = viewer.getElementsByTagName('div');
+		var listitems = [];
+		for (i = 0; i < divs.length; i++) {
+		        listitems.push(divs.item(i));
+		}
+		listitems.sort(function(a, b) {
+		    var compA = a.getAttribute('id').toUpperCase();
+		    var compB = b.getAttribute('id').toUpperCase();
+		    return (compA < compB) ? -1 : (compA > compB) ? 1 : 0;
+		});
+		for (i = 0; i < listitems.length; i++) {
+		    viewer.appendChild(listitems[i]);
+		}
+		paused = false;
+	},50);
+}
+
+var oscPort = new osc.WebSocketPort({
+    url: "ws://"+document.location.host,
+    metadata: false
+});
+
+oscPort.open();
+
+oscPort.on("message", function (oscMsg) {
+    if(paused) { return false; }
+
+    var address = oscMsg.address.toLowerCase();
+
+	// Ignore DIAG messages immediately
+	if( filter['diag'] ) {
+		if(address.indexOf('/diag/') > -1) {  return false; }
+	}
+
+	// Clean up and don't display audio
+	if( filter['audio'] ) {
+		if(address.indexOf('/audio/') > -1) {  return false; }
+	}
+	
+	// Clean up and don't display output
+	if( filter['output'] ) {
+		if(address.indexOf('/output/') > -1) {  return false; }
+	}
+
+	// Clean up and don't display profiler
+	if( filter['profiler'] ) {
+		if(address.indexOf('/profiler/') > -1) {  return false; }
+	}
+
+	// Clean up and don't display timecode
+	if( filter['timecode'] ) {
+		if(address.indexOf('/timecode') > -1) {  return false; }
+	}
+	
+	// Clean up and don't display format
+	if( filter['format'] ) {
+		if(address.indexOf('/format') > -1) {  return false; }
+	}
+
+	// Clean up and don't display channel
+	if( filter['channel'] ) {
+		if(address.indexOf('/channel/') > -1) {  return false; }
+	}
+
+	// Ignore DIAG messages immediately
+	if( freeFilter.length > 2 ) {
+		if(address.indexOf(freeFilter) > -1) {  return false; }
+	}
+
+	if( document.getElementById(address) === null) {
+		var div = document.createElement("div");
+		div.id = address;
+		div.className = 'oscrow';
+		viewer.appendChild(div);
+		counter[address] = 1;
+		document.getElementById(address).innerHTML = '<span class="address"><b>' + address + '</b> <i>('+counter[address]+')</i></span><span class="value">' + JSON.stringify( oscMsg.args) + '</span>';
+		return false;
+	} else {
+		document.getElementById(address).innerHTML = '<span class="address"><b>' + address + '</b> (<i>'+counter[address]+'</i>)</span><span class="value">' + JSON.stringify( oscMsg.args) + '</span>';
+		counter[address]++;
+		return false;
+	}
+
+});
+</script>
+</body>
+</html>
